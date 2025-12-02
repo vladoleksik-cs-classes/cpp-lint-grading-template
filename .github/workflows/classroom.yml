@@ -1,0 +1,90 @@
+name: Autograding Tests
+'on':
+- push
+- repository_dispatch
+permissions:
+  checks: write
+  actions: read
+  contents: read
+jobs:
+  run-autograding-tests:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-classroom[bot]'
+    container:
+      image: ghcr.io/vladoleksik-cs-classes/cpp-custom-lint-grader
+      options: --privileged
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Copy files
+      run: |
+        cp main.cpp /grade/main.cpp
+        cp assignment.tar /grade/assignment.tar
+        cp assignment.tar.sig /grade/assignment.tar.sig
+        cd /grade
+    - name: Test
+      run: |
+        mkdir -p /grade/.github/workflows/
+        cp .github/workflows/classroom.yml /grade/.github/workflows/classroom.yml
+        cd /grade
+        /grade/eval.sh
+      env:
+        GPG_ASSIGNMENT_PUBLIC: ${{ vars.GPG_ASSIGNMENT_PUBLIC }}
+    - name: Export report
+      uses: actions/upload-artifact@v4
+      with:
+        name: grading-report
+        path: /grade/report_render/report.html
+    - name: Report compilation score
+      id: compile
+      uses: cbfacademy/autograding-command-grader@dev
+      with:
+        test-name: compile
+        command: "/grade/print_result.sh Syntax /grade/reports/score.json"
+        timeout: 1
+        max-score: 5
+    - name: Report analysis score
+      id: lint
+      uses: cbfacademy/autograding-command-grader@dev
+      with:
+        test-name: lint
+        command: "/grade/print_result.sh Analysis /grade/reports/score.json"
+        timeout: 1
+        max-score: 20
+    - name: Report stability score
+      id: stability
+      uses: cbfacademy/autograding-command-grader@dev
+      with:
+        test-name: lint
+        command: "/grade/print_result.sh Stability /grade/reports/score.json"
+        timeout: 1
+        max-score: 20
+    - name: Report test results
+      id: test
+      uses: cbfacademy/autograding-command-grader@dev
+      with:
+        test-name: test
+        command: "/grade/print_result.sh Correctness /grade/reports/score.json"
+        timeout: 1
+        max-score: 10
+    - name: Report style score
+      id: style
+      uses: cbfacademy/autograding-command-grader@dev
+      with:
+        test-name: style
+        command: "/grade/print_result.sh Style /grade/reports/score.json"
+        timeout: 1
+        max-score: 5
+    - name: Autograding Reporter
+      uses: cbfacademy/autograding-grading-reporter@dev
+      env:
+        COMPILE_RESULTS: "${{steps.compile.outputs.result}}"
+        LINT_RESULTS: "${{steps.lint.outputs.result}}"
+        STABILITY_RESULTS: "${{steps.stability.outputs.result}}"
+        TEST_RESULTS: "${{steps.test.outputs.result}}"
+        STYLE_RESULTS: "${{steps.style.outputs.result}}"
+      with:
+        runners: compile, lint, stability, test, style
